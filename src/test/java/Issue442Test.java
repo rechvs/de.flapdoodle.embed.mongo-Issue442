@@ -65,6 +65,7 @@ public class Issue442Test {
     }
   }
 
+  // FIXME The assertions in this test work, but the test throws a de.flapdoodle.reverse.TearDownException at the end.
   @Test
   public void readAnyDatabaseRole() throws Exception {
     final var net = Net.of("localhost", PORT, false);
@@ -79,15 +80,15 @@ public class Issue442Test {
       final var credentialAdmin =
         MongoCredential.createCredential(USERNAME_ADMIN, DB_ADMIN, PASSWORD_ADMIN.toCharArray());
       try (final var clientAdmin = new MongoClient(address, credentialAdmin, MongoClientOptions.builder().build())) {
-        final var db = clientAdmin.getDatabase(DB_TEST);
         // Create normal user and grant them the builtin "readAnyDatabase" role.
-        // FIXME This unexpectedly fails with "No role named readAnyDatabase@test-db".
-        db.runCommand(commandCreateUser(USERNAME_NORMAL_USER, PASSWORD_NORMAL_USER, "readAnyDatabase"));
+        final var dbAdmin = clientAdmin.getDatabase(DB_ADMIN);
+        dbAdmin.runCommand(commandCreateUser(USERNAME_NORMAL_USER, PASSWORD_NORMAL_USER, "readAnyDatabase"));
         // Create collection.
-        db.getCollection(COLL_TEST).insertOne(new Document(Map.of("key", "value")));
+        final var dbTest = clientAdmin.getDatabase(DB_TEST);
+        dbTest.getCollection(COLL_TEST).insertOne(new Document(Map.of("key", "value")));
       }
       final var credentialNormalUser =
-        MongoCredential.createCredential(USERNAME_NORMAL_USER, DB_TEST, PASSWORD_NORMAL_USER.toCharArray());
+        MongoCredential.createCredential(USERNAME_NORMAL_USER, DB_ADMIN, PASSWORD_NORMAL_USER.toCharArray());
       try (final var clientNormalUser =
              new MongoClient(address, credentialNormalUser, MongoClientOptions.builder().build())) {
         final var expected = List.of(COLL_TEST);
