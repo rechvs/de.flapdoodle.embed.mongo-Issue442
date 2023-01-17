@@ -65,9 +65,9 @@ public class Issue442Test {
     }
   }
 
-  // FIXME The assertions in this test work, but the test throws a de.flapdoodle.reverse.TearDownException at the end.
   @Test
   public void readAnyDatabaseRole() throws Exception {
+    final var roleName = "readAnyDatabase";
     final var net = Net.of("localhost", PORT, false);
     final var args = MongodArguments.defaults().withAuth(true);
     try (final var running = startMongod(net, args)) {
@@ -80,11 +80,16 @@ public class Issue442Test {
       final var credentialAdmin =
         MongoCredential.createCredential(USERNAME_ADMIN, DB_ADMIN, PASSWORD_ADMIN.toCharArray());
       try (final var clientAdmin = new MongoClient(address, credentialAdmin, MongoClientOptions.builder().build())) {
-        // Create normal user and grant them the builtin "readAnyDatabase" role.
         final var dbAdmin = clientAdmin.getDatabase(DB_ADMIN);
-        dbAdmin.runCommand(commandCreateUser(USERNAME_NORMAL_USER, PASSWORD_NORMAL_USER, "readAnyDatabase"));
-        // Create collection.
         final var dbTest = clientAdmin.getDatabase(DB_TEST);
+        // Create normal user.
+        dbTest.runCommand(commandCreateUser(USERNAME_NORMAL_USER, PASSWORD_NORMAL_USER));
+        // Grant role to user.
+        // FIXME This fails with "No role named readAnyDatabase@test-db"...
+        dbTest.runCommand(commandGrantRole(USERNAME_NORMAL_USER, roleName));
+        // FIXME ...while this fails with 'Could not find user "test-db-user" for db "admin"'.
+        dbAdmin.runCommand(commandGrantRole(USERNAME_NORMAL_USER, roleName));
+        // Create collection.
         dbTest.getCollection(COLL_TEST).insertOne(new Document(Map.of("key", "value")));
       }
       final var credentialNormalUser =
@@ -164,6 +169,14 @@ public class Issue442Test {
   ) {
     return new Document("createUser", username)
       .append("pwd", password)
+      .append("roles", Arrays.asList(roles));
+  }
+
+  private static Document commandGrantRole(
+    final String username,
+    final String... roles
+  ) {
+    return new Document("grantRolesToUser", username)
       .append("roles", Arrays.asList(roles));
   }
 }
