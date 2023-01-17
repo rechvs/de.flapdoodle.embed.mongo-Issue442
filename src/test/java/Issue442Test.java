@@ -67,7 +67,6 @@ public class Issue442Test {
 
   @Test
   public void readAnyDatabaseRole() throws Exception {
-    final var roleName = "readAnyDatabase";
     final var net = Net.of("localhost", PORT, false);
     final var args = MongodArguments.defaults().withAuth(true);
     try (final var running = startMongod(net, args)) {
@@ -80,15 +79,11 @@ public class Issue442Test {
       final var credentialAdmin =
         MongoCredential.createCredential(USERNAME_ADMIN, DB_ADMIN, PASSWORD_ADMIN.toCharArray());
       try (final var clientAdmin = new MongoClient(address, credentialAdmin, MongoClientOptions.builder().build())) {
-        final var dbAdmin = clientAdmin.getDatabase(DB_ADMIN);
         final var dbTest = clientAdmin.getDatabase(DB_TEST);
-        // Create normal user.
-        dbTest.runCommand(commandCreateUser(USERNAME_NORMAL_USER, PASSWORD_NORMAL_USER));
-        // Grant role to user.
-        // FIXME This fails with "No role named readAnyDatabase@test-db"...
-        dbTest.runCommand(commandGrantRole(USERNAME_NORMAL_USER, roleName));
-        // FIXME ...while this fails with 'Could not find user "test-db-user" for db "admin"'.
-        dbAdmin.runCommand(commandGrantRole(USERNAME_NORMAL_USER, roleName));
+        // Create normal user and grant them the builtin "readAnyDatabase" role on the "admin" db.
+        final var role = new Document("role", "readAnyDatabase").append("db", DB_ADMIN);
+        dbTest.runCommand(commandCreateUser(USERNAME_NORMAL_USER, PASSWORD_NORMAL_USER, role));
+        // dbTest.runCommand(commandCreateUser(USERNAME_NORMAL_USER, PASSWORD_NORMAL_USER));
         // Create collection.
         dbTest.getCollection(COLL_TEST).insertOne(new Document(Map.of("key", "value")));
       }
@@ -97,6 +92,7 @@ public class Issue442Test {
       try (final var clientNormalUser =
              new MongoClient(address, credentialNormalUser, MongoClientOptions.builder().build())) {
         final var expected = List.of(COLL_TEST);
+        // FIXME This fails with "com.mongodb.MongoSecurityException: Exception authenticating MongoCredential{mechanism=SCRAM-SHA-1, userName='test-db-user', source='admin', password=<hidden>, mechanismProperties=<hidden>}".
         final var actual = clientNormalUser.getDatabase(DB_TEST).listCollectionNames().into(new ArrayList<>());
         Assertions.assertIterableEquals(expected, actual);
       }
@@ -172,11 +168,13 @@ public class Issue442Test {
       .append("roles", Arrays.asList(roles));
   }
 
-  private static Document commandGrantRole(
+  private static Document commandCreateUser(
     final String username,
-    final String... roles
+    final String password,
+    final Document role
   ) {
-    return new Document("grantRolesToUser", username)
-      .append("roles", Arrays.asList(roles));
+    return new Document("createUser", username)
+      .append("pwd", password)
+      .append("roles", Collections.singletonList(role));
   }
 }
